@@ -243,12 +243,31 @@ impl Instruction {
             Self::Syscall,
         ])
     }
-    fn add<T: Into<U>, U: Into<Value>>(a: T, b: U) -> Blob {
-        let a: U = a.into();
+    fn constant(cons: u32) -> Blob {
+        Blob(vec![Self::Mov(Reg::Rax, cons.into()), Self::Push(Reg::Rax)])
+    }
+    fn add() -> Blob {
         Blob(vec![
-            Self::Mov(Reg::Rax, a.into()),
-            Self::Mov(Reg::Rbx, b.into()),
+            Self::Pop(Reg::Rbx),
+            Self::Pop(Reg::Rax),
             Self::Add(Reg::Rax, Reg::Rbx),
+            Self::Push(Reg::Rax),
+        ])
+    }
+    fn sub() -> Blob {
+        Blob(vec![
+            Self::Pop(Reg::Rbx),
+            Self::Pop(Reg::Rax),
+            Self::Sub(Reg::Rax, Reg::Rbx),
+            Self::Push(Reg::Rax),
+        ])
+    }
+    fn mul() -> Blob {
+        Blob(vec![
+            Self::Pop(Reg::Rbx),
+            Self::Pop(Reg::Rax),
+            Self::Mul(Reg::Rax, Reg::Rbx),
+            Self::Push(Reg::Rax),
         ])
     }
 }
@@ -256,13 +275,13 @@ impl Instruction {
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Mov(s, d) => write!(f, "mov {s},{d}"),
+            Self::Mov(d, s) => write!(f, "mov {d},{s}"),
             Self::Push(s) => write!(f, "push {s}"),
             Self::Pop(d) => write!(f, "pop {d}"),
-            Self::Add(s, d) => write!(f, "add {s},{d}"),
-            Self::Sub(s, d) => write!(f, "sub {s},{d}"),
-            Self::Mul(s, d) => write!(f, "mul {s},{d}"),
-            Self::Xor(s, d) => write!(f, "xor {s},{d}"),
+            Self::Add(d, s) => write!(f, "add {d},{s}"),
+            Self::Sub(d, s) => write!(f, "sub {d},{s}"),
+            Self::Mul(d, s) => write!(f, "imul {d},{s}"),
+            Self::Xor(d, s) => write!(f, "xor {d},{s}"),
             Self::Syscall => write!(f, "syscall"),
         }
     }
@@ -303,9 +322,16 @@ impl IntoIterator for Blob {
 fn main() -> std::io::Result<()> {
     let mut file = File::create("out.asm")?;
     writeln!(file, "section .text\n{PROGRAM_START}")?;
-    let a = Instruction::add(1u32, 2u32).into_iter().chain(Instruction::exit(Reg::Rax));
-    let blob = Blob(a.collect());
+    let program = vec![
+        Instruction::constant(6),
+        Instruction::constant(2),
+        Instruction::sub(),
+        Blob(vec![Instruction::Pop(Reg::Rax)]),
+        Instruction::exit(Reg::Rax),
+    ];
+    for blob in program {
+        writeln!(file, "{blob}")?;
+    }
 
-    writeln!(file, "{blob}")?;
     Ok(())
 }
