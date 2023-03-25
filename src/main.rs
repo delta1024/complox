@@ -1,5 +1,6 @@
 use std::{fmt, fs::File, io::Write, vec};
 
+const PROGRAM_START: &str = "global _start\n_start:\n";
 #[allow(dead_code)]
 /// x86_64 Regesters.
 enum Reg {
@@ -194,9 +195,9 @@ enum Value {
     Number(u32),
     Regester(Reg),
 }
-impl From<u32> for Value {
-    fn from(value: u32) -> Self {
-        Self::Number(value)
+impl<T: Into<u32>> From<T> for Value {
+    fn from(value: T) -> Self {
+        Self::Number(value.into())
     }
 }
 impl From<Reg> for Value {
@@ -212,41 +213,77 @@ impl fmt::Display for Value {
         }
     }
 }
+
+enum Syscall {
+    Exit,
+}
+impl From<Syscall> for u32 {
+    fn from(value: Syscall) -> Self {
+        match value {
+            Syscall::Exit => 60,
+        }
+    }
+}
 enum Instruction {
     Mov(Reg, Value),
+    Push(Reg),
+    Pop(Reg),
+    Add(Reg, Reg),
+    Sub(Reg, Reg),
+    Mul(Reg, Reg),
     Xor(Reg, Reg),
     Syscall,
+}
+
+impl Instruction {
+    fn exit<T: Into<Value>>(exit_code: T) -> Blob {
+        Blob(vec![
+            Self::Mov(Reg::Rdi, exit_code.into()),
+            Self::Mov(Reg::Rax, Syscall::Exit.into()),
+            Self::Syscall,
+        ])
+    }
+    fn add<T: Into<U>, U: Into<Value>>(a: T, b: U) -> Blob {
+        let a: U = a.into();
+        Blob(vec![
+            Self::Mov(Reg::Rax, a.into()),
+            Self::Mov(Reg::Rbx, b.into()),
+            Self::Add(Reg::Rax, Reg::Rbx),
+        ])
+    }
 }
 
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Mov(reg, val) => write!(f, "mov {reg},{val}"),
-            Self::Xor(reg, reg1) => write!(f, "xor {reg},{reg1}"),
+            Self::Mov(s, d) => write!(f, "mov {s},{d}"),
+            Self::Push(s) => write!(f, "push {s}"),
+            Self::Pop(d) => write!(f, "pop {d}"),
+            Self::Add(s, d) => write!(f, "add {s},{d}"),
+            Self::Sub(s, d) => write!(f, "sub {s},{d}"),
+            Self::Mul(s, d) => write!(f, "mul {s},{d}"),
+            Self::Xor(s, d) => write!(f, "xor {s},{d}"),
             Self::Syscall => write!(f, "syscall"),
         }
     }
 }
 
 #[repr(transparent)]
-struct Syscall(Vec<Instruction>);
-impl Syscall {
-    fn exit(code: u32) -> Self {
-        let exit_code = if code == 0 {
-            Instruction::Xor(Reg::Rdi, Reg::Rdi)
-        } else {
-            Instruction::Mov(Reg::Rdi, code.into())
-        };
-
-        Self(vec![
-            Instruction::Mov(Reg::Rax, 60.into()),
-            exit_code,
-            Instruction::Syscall,
-        ])
+struct Blob(Vec<Instruction>);
+impl<T: Into<Vec<Instruction>>> From<T> for Blob {
+    fn from(value: T) -> Self {
+        Self(value.into())
     }
 }
-
-impl<'a> IntoIterator for &'a Syscall
+impl fmt::Display for Blob {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for instruction in self {
+            writeln!(f, "    {instruction}")?;
+        }
+        Ok(())
+    }
+}
+impl<'a> IntoIterator for &'a Blob
 where
     Self: 'a,
 {
@@ -256,7 +293,7 @@ where
         self.0.iter()
     }
 }
-impl IntoIterator for Syscall {
+impl IntoIterator for Blob {
     type Item = Instruction;
     type IntoIter = std::vec::IntoIter<Instruction>;
     fn into_iter(self) -> Self::IntoIter {
@@ -265,9 +302,10 @@ impl IntoIterator for Syscall {
 }
 fn main() -> std::io::Result<()> {
     let mut file = File::create("out.asm")?;
-    writeln!(file, "section .text\nglobal _start\n_start:")?;
-    for instruction in Syscall::exit(0) {
-        writeln!(file, "    {instruction}")?;
-    }
+    writeln!(file, "section .text\n{PROGRAM_START}")?;
+    let a = Instruction::add(1u32, 2u32).into_iter().chain(Instruction::exit(Reg::Rax));
+    let blob = Blob(a.collect());
+
+    writeln!(file, "{blob}")?;
     Ok(())
 }
