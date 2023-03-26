@@ -1,4 +1,9 @@
-use std::{fmt, fs::File, io::Write, vec};
+use std::{
+    fmt::{self, Pointer},
+    fs::File,
+    io::Write,
+    vec,
+};
 
 const PROGRAM_START: &str = "global _start\n_start:\n";
 #[allow(dead_code)]
@@ -191,18 +196,160 @@ impl fmt::Display for Reg {
         }
     }
 }
-enum Value {
-    Number(u32),
+enum Directive {
+    /// Eight bits
+    Byte {
+        regester: Reg,
+        deref: bool,
+        offset: Option<u32>,
+    },
+    /// Two Bytes,
+    Word {
+        regester: Reg,
+        deref: bool,
+        offset: Option<u32>,
+    },
+    /// Two words
+    DWord {
+        regester: Reg,
+        deref: bool,
+        offset: Option<u32>,
+    },
+    QWord {
+        regester: Reg,
+        deref: bool,
+        offset: Option<u32>,
+    },
+}
+impl fmt::Display for Directive {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Byte {
+                regester,
+                deref,
+                offset,
+            } => {
+                write!(f, "BYTE PTR ")?;
+                match offset {
+                    Some(offset) if *deref => write!(f, "[{regester}+{offset}]"),
+                    Some(offset) => write!(f, "{regester}+{offset}"),
+                    None if *deref => write!(f, "[{regester}]"),
+                    None => write!(f, "{regester}"),
+                }
+            }
+            Self::Word {
+                regester,
+                deref,
+                offset,
+            } => {
+                write!(f, "WORD PTR ")?;
+                match offset {
+                    Some(offset) if *deref => write!(f, "[{regester}+{offset}]"),
+                    Some(offset) => write!(f, "{regester}+{offset}"),
+                    None if *deref => write!(f, "[{regester}]"),
+                    None => write!(f, "{regester}"),
+                }
+            }
+            Self::DWord {
+                regester,
+                deref,
+                offset,
+            } => {
+                write!(f, "DWORD PTR ")?;
+                match offset {
+                    Some(offset) if *deref => write!(f, "[{regester}+{offset}]"),
+                    Some(offset) => write!(f, "{regester}+{offset}"),
+                    None if *deref => write!(f, "[{regester}]"),
+                    None => write!(f, "{regester}"),
+                }
+            }
+            Self::QWord {
+                regester,
+                deref,
+                offset,
+            } => {
+                write!(f, "QWORD PTR ")?;
+                match offset {
+                    Some(offset) if *deref => write!(f, "[{regester}+{offset}]"),
+                    Some(offset) => write!(f, "{regester}+{offset}"),
+                    None if *deref => write!(f, "[{regester}]"),
+                    None => write!(f, "{regester}"),
+                }
+            }
+        }
+    }
+}
+impl Directive {
+    fn qword(regester: Reg, deref: bool, offset: Option<u32>) -> Directive {
+        Self::QWord {
+            regester,
+            deref,
+            offset,
+        }
+    }
+    fn dword(regester: Reg, deref: bool, offset: Option<u32>) -> Directive {
+        Self::DWord {
+            regester,
+            deref,
+            offset,
+        }
+    }
+    fn word(regester: Reg, deref: bool, offset: Option<u32>) -> Directive {
+        Self::Word {
+            regester,
+            deref,
+            offset,
+        }
+    }
+    fn byte(regester: Reg, deref: bool, offset: Option<u32>) -> Directive {
+        Self::Byte {
+            regester,
+            deref,
+            offset,
+        }
+    }
+}
+
+enum Regester {
+    Directive(Directive),
     Regester(Reg),
 }
-impl<T: Into<u32>> From<T> for Value {
+impl fmt::Display for Regester {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Regester::Regester(r) => r.fmt(f),
+            Regester::Directive(d) => d.fmt(f),
+        }
+    }
+}
+impl From<Directive> for Regester {
+    fn from(value: Directive) -> Self {
+        Self::Directive(value)
+    }
+}
+
+impl From<Reg> for Regester {
+    fn from(value: Reg) -> Self {
+        Self::Regester(value)
+    }
+}
+enum Value {
+    Number(u32),
+    Regester(Regester),
+}
+impl<T: Into<Regester>> From<T> for Value {
     fn from(value: T) -> Self {
+        Self::Regester(value.into())
+    }
+}
+impl From<u32> for Value {
+    fn from(value: u32) -> Self {
         Self::Number(value.into())
     }
 }
-impl From<Reg> for Value {
-    fn from(value: Reg) -> Self {
-        Self::Regester(value)
+impl From<Syscall> for Value {
+    fn from(value: Syscall) -> Self {
+        Self::Number(value.into())
     }
 }
 impl fmt::Display for Value {
@@ -225,49 +372,49 @@ impl From<Syscall> for u32 {
     }
 }
 enum Instruction {
-    Mov(Reg, Value),
-    Push(Reg),
-    Pop(Reg),
-    Add(Reg, Reg),
-    Sub(Reg, Reg),
-    Mul(Reg, Reg),
-    Xor(Reg, Reg),
+    Mov(Regester, Value),
+    Push(Regester),
+    Pop(Regester),
+    Add(Regester, Regester),
+    Sub(Regester, Regester),
+    Mul(Regester, Regester),
+    Xor(Regester, Regester),
     Syscall,
 }
 
 impl Instruction {
     fn exit<T: Into<Value>>(exit_code: T) -> Blob {
         Blob(vec![
-            Self::Mov(Reg::Rdi, exit_code.into()),
-            Self::Mov(Reg::Rax, Syscall::Exit.into()),
+            Self::Mov(Reg::Rdi.into(), exit_code.into()),
+            Self::Mov(Reg::Rax.into(), Syscall::Exit.into()),
             Self::Syscall,
         ])
     }
     fn constant(cons: u32) -> Blob {
-        Blob(vec![Self::Mov(Reg::Rax, cons.into()), Self::Push(Reg::Rax)])
+        Blob(vec![Self::Mov(Reg::Rax.into(), cons.into()), Self::Push(Reg::Rax.into())])
     }
     fn add() -> Blob {
         Blob(vec![
-            Self::Pop(Reg::Rbx),
-            Self::Pop(Reg::Rax),
-            Self::Add(Reg::Rax, Reg::Rbx),
-            Self::Push(Reg::Rax),
+            Self::Pop(Reg::Rbx.into()),
+            Self::Pop(Reg::Rax.into()),
+            Self::Add(Reg::Rax.into(), Reg::Rbx.into()),
+            Self::Push(Reg::Rax.into()),
         ])
     }
     fn sub() -> Blob {
         Blob(vec![
-            Self::Pop(Reg::Rbx),
-            Self::Pop(Reg::Rax),
-            Self::Sub(Reg::Rax, Reg::Rbx),
-            Self::Push(Reg::Rax),
+            Self::Pop(Reg::Rbx.into()),
+            Self::Pop(Reg::Rax.into()),
+            Self::Sub(Reg::Rax.into(), Reg::Rbx.into()),
+            Self::Push(Reg::Rax.into()),
         ])
     }
     fn mul() -> Blob {
         Blob(vec![
-            Self::Pop(Reg::Rbx),
-            Self::Pop(Reg::Rax),
-            Self::Mul(Reg::Rax, Reg::Rbx),
-            Self::Push(Reg::Rax),
+            Self::Pop(Reg::Rbx.into()),
+            Self::Pop(Reg::Rax.into()),
+            Self::Mul(Reg::Rax.into(), Reg::Rbx.into()),
+            Self::Push(Reg::Rax.into()),
         ])
     }
 }
@@ -321,12 +468,12 @@ impl IntoIterator for Blob {
 }
 fn main() -> std::io::Result<()> {
     let mut file = File::create("out.asm")?;
-    writeln!(file, "section .text\n{PROGRAM_START}")?;
+    write!(file, "section .text\n{PROGRAM_START}")?;
     let program = vec![
         Instruction::constant(6),
         Instruction::constant(2),
         Instruction::sub(),
-        Blob(vec![Instruction::Pop(Reg::Rax)]),
+        Blob(vec![Instruction::Pop(Reg::Rax.into())]),
         Instruction::exit(Reg::Rax),
     ];
     for blob in program {
