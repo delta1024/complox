@@ -1,11 +1,33 @@
-use std::{fs::File, io::Write, vec};
+use std::{
+    fs::File,
+    io::Write,
+    process::{Command, Stdio},
+    vec,
+};
 
 mod x86_64;
+const LOX_COMP_BUF: &'static str = "/tmp/out";
 
-use x86_64::{Program,Blob, OpCode, Reg, Regester, Section, Syscall};
+use x86_64::{Blob, OpCode, Program, Reg, Regester, Section, Syscall};
 
+fn compile_program(program: Program) -> std::io::Result<()> {
+    let asm_path = format!("{LOX_COMP_BUF}.asm");
+    let obj_path = format!("{LOX_COMP_BUF}.o");
+    let mut file = File::create(&asm_path)?;
+    write!(file, "{program}")?;
+
+    Command::new("nasm")
+        .args(&["-f", "elf64", &asm_path])
+        .stderr(Stdio::inherit())
+        .output()?;
+    Command::new("ld")
+        .arg(obj_path)
+        .stdout(Stdio::inherit())
+        .output()?;
+    Ok(())
+}
 fn main() -> std::io::Result<()> {
-    let mut file = File::create("out.asm")?;
+
     let text = Section::new(
         "_start",
         vec![
@@ -25,8 +47,6 @@ fn main() -> std::io::Result<()> {
         ],
     );
 
-    let program = Program::new(None, text);
-    write!(file, "{program}")?;
-
-    Ok(())
+    let program = Program::new(None, vec![text]);
+    compile_program(program)
 }

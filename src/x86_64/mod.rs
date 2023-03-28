@@ -104,10 +104,10 @@ impl fmt::Display for Section {
 }
 pub(crate) struct Program {
     data: Option<Section>,
-    text: Section,
+    text: Vec<Section>,
 }
 impl Program {
-    pub(crate) fn new(data: Option<Section>, text: Section) -> Program {
+    pub(crate) fn new(data: Option<Section>, text: Vec<Section>) -> Program {
         Program { data, text }
     }
 }
@@ -122,7 +122,9 @@ impl fmt::Display for Program {
         }
         writeln!(f, "section .text")?;
         writeln!(f, "  global _start")?;
-        write!(f, "{}", self.text)?;
+        for glob in &self.text {
+            write!(f, "{glob}")?;
+        }
         Ok(())
     }
 }
