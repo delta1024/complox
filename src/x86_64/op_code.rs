@@ -1,5 +1,5 @@
 use super::{Reg, Regester, Syscall, Value};
-use crate::Blob;
+use crate::ir::Blob;
 use std::fmt;
 pub(crate) enum OpCode {
     Mov(Regester, Value),

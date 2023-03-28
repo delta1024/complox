@@ -1,15 +1,16 @@
 use std::{
-    fs::File,
-    io::Write,
+    fs::{self, File},
+    io::{Read, Write},
     process::{Command, Stdio},
-    vec,
 };
 
+mod ast;
+mod ir;
 mod x86_64;
+use ir::Program;
 const LOX_COMP_BUF: &'static str = "/tmp/out";
 
-use x86_64::{Blob, OpCode, Program, Reg, Regester, Section, Syscall};
-
+use ast::{scanner::Scanner, BinaryExpr, Expression, LiteralExpr, UnaryExpr};
 fn compile_program(program: Program) -> std::io::Result<()> {
     let asm_path = format!("{LOX_COMP_BUF}.asm");
     let obj_path = format!("{LOX_COMP_BUF}.o");
@@ -21,32 +22,71 @@ fn compile_program(program: Program) -> std::io::Result<()> {
         .stderr(Stdio::inherit())
         .output()?;
     Command::new("ld")
-        .arg(obj_path)
+        .arg(&obj_path)
         .stdout(Stdio::inherit())
         .output()?;
+    fs::remove_file(asm_path)?;
+    fs::remove_file(obj_path)?;
     Ok(())
 }
+fn run<'a>(input: &'a str) -> Result<(), ast::Error> {
+    let scanner = Scanner::new(input);
+    for token in scanner {
+        match token {
+            Ok(token) => println!("{token}"),
+            Err(err) => eprintln!("{err}"),
+        }
+    }
+    Ok(())
+}
+fn run_file(file: &str) -> std::io::Result<Option<Program>> {
+    let mut file = File::open(file)?;
+    let mut input = String::new();
+    file.read_to_string(&mut input)?;
+    match run(&input) {
+        Ok(()) => (),
+        Err(err) => {
+            eprintln!("{err}");
+            std::process::exit(65);
+        }
+    }
+    Ok(None)
+}
+fn run_repl() -> std::io::Result<()> {
+    let mut input = String::new();
+    loop {
+        print!("> ");
+        std::io::stdout().flush()?;
+        if std::io::stdin().read_line(&mut input)? == 0 {
+            break Ok(());
+        }
+        match run(&input) {
+            Ok(()) => {
+                input.clear();
+            }
+            Err(err) => {
+                eprintln!("{err}");
+                input.clear();
+            }
+        }
+    }
+}
 fn main() -> std::io::Result<()> {
-
-    let text = Section::new(
-        "_start",
-        vec![
-            OpCode::mul_v(2, 4),
-            // Print the quotient
-            Blob::from(vec![
-                OpCode::Add(Reg::Al.into(), ('0' as u32).into()), // Convert quotient to ascii
-                OpCode::Mov(Regester::Deref(Reg::Rsp), Reg::Al.into()), // store quotient in stack
-                OpCode::Mov(Reg::Rax.into(), Syscall::Write.into()), // Set syscall
-                OpCode::Mov(Reg::Rdi.into(), 1.into()),           // File descriptor (stdout)
-                OpCode::Mov(Reg::Rsi.into(), Reg::Rsp.into()),    // Pointer to quotient string
-                OpCode::Mov(Reg::Rdx.into(), 1.into()),           // lenght of string
-                OpCode::Syscall,
-            ]),
-            // Exit program
-            OpCode::exit(0),
-        ],
-    );
-
-    let program = Program::new(None, vec![text]);
-    compile_program(program)
+    let args = std::env::args().collect::<Vec<String>>();
+    if args.len() > 1 {
+        println!("Usage: complox [file]");
+    } else if args.len() == 0 {
+        if let Some(program) = run_file(&args[1])? {
+            compile_program(program)?;
+        }
+    } else {
+        run_repl()?;
+    }
+    //   let expr = BinaryExpr::new(
+    //       UnaryExpr::new("-",LiteralExpr::Number("123".to_string().into_boxed_str())),
+    //       "*",
+    //       Expression::Grouping(Box::new(Expression::Literal(LiteralExpr::Number("45.67".to_string().into_boxed_str())))),
+    //   );
+    //   println!("{expr}");
+    Ok(())
 }
