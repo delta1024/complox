@@ -86,7 +86,7 @@ impl Pos {
 pub(crate) struct Scanner<'a> {
     location: Pos,
     source: &'a str,
-    line: usize,
+    pub(super) line: usize,
     chars: CharIndices<'a>,
 }
 

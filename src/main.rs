@@ -30,12 +30,10 @@ fn compile_program(program: Program) -> std::io::Result<()> {
     Ok(())
 }
 fn run<'a>(input: &'a str) -> Result<(), ast::Error> {
-    let scanner = Scanner::new(input);
-    for token in scanner {
-        match token {
-            Ok(token) => println!("{token}"),
-            Err(err) => eprintln!("{err}"),
-        }
+    // Todo: add syncronization to parser
+    match input.parse::<Expression>() {
+        Ok(exp) => println!("{exp}"),
+        Err(err) => eprintln!("{err}"),
     }
     Ok(())
 }

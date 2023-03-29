@@ -20,13 +20,13 @@ impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[line {}] Error {}: {}",
+            "[line {}] Error at {}: {}",
             self.line, self.location, self.message
         )
     }
 }
 pub(crate) mod scanner;
-//pub(crate) mod parser;
+pub(crate) mod parser;
 
 pub(crate) enum LiteralExpr {
     Number(Box<str>),
